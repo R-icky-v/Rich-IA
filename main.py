@@ -679,14 +679,48 @@ def process_search_date(message):
         reply_markup=make_main_menu(name)
     )
 
+# Agregar esto al final de tu archivo, justo antes del bloque "if __name__ == "__main__":"
+def setup_web_server():
+    """Configura un servidor web simple para mantener el servicio activo en Render"""
+    try:
+        import flask
+        import threading
+        
+        app = flask.Flask(__name__)
+        
+        @app.route('/')
+        def index():
+            return "¡Rich AI está activo! Bot de Telegram funcionando correctamente."
+        
+        @app.route('/health')
+        def health():
+            return "OK", 200
+        
+        port = int(os.environ.get("PORT", 8080))
+        
+        def run_server():
+            app.run(host="0.0.0.0", port=port)
+        
+        # Iniciar el servidor web en un hilo separado
+        server_thread = threading.Thread(target=run_server, daemon=True)
+        server_thread.start()
+        print(f"🌐 Servidor web iniciado en el puerto {port}")
+    except ImportError:
+        print("⚠️ Flask no está instalado. El servidor web no se iniciará.")
+        print("⚠️ Para desplegar en Render, instala Flask con: pip install flask")
+
 # --- INICIAR POLLING ---
 if __name__ == "__main__":
     print("🚀 Rich AI arrancando...")
     # Cargar datos desde el respaldo al iniciar
+    load_dotenv()  # Asegurarse de cargar variables de entorno
     load_backup()
 
     # Crear un respaldo inicial al arrancar
     save_backup()
+
+    # Iniciar servidor web para Render
+    setup_web_server()
 
     # Iniciar hilo para respaldos automáticos
     backup_thread = threading.Thread(target=backup_scheduler, daemon=True)
