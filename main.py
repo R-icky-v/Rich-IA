@@ -7,10 +7,13 @@ import json
 import threading
 import time
 import shutil
+import requests 
 
 load_dotenv()
 bot = telebot.TeleBot("8149029077:AAHuHO9C4grWy4YRvc6z-d4aIrVWxtwFtXE")
-
+# Sistema Keep-Alive para Render
+KEEP_ALIVE_INTERVAL = 600  # 10 minutos (más seguro que 13)
+KEEP_ALIVE_URL = None  # Se configurará automáticamente
 # Estructuras en memoria:
 user_notes = {}   # { user_id: [ {"tag": str, "title": str, "text": str, "ts": datetime}, ... ] }
 user_names = {}   # { user_id: "Nombre" }
@@ -224,6 +227,59 @@ def backup_scheduler():
         except Exception as e:
             print(f"❗ Error crítico en el planificador de respaldos: {e}")
             time.sleep(60)  # Esperar un minuto antes de reintentar en caso de error crítico
+
+def keep_alive_scheduler():
+    """Función para mantener el servicio activo enviando pings periódicos"""
+    global KEEP_ALIVE_URL
+    
+    # Configurar URL automáticamente desde variable de entorno
+    if not KEEP_ALIVE_URL:
+        # Priorizar la URL de Render automática
+        render_external_url = os.environ.get("RENDER_EXTERNAL_URL")
+        app_name = os.environ.get("RENDER_SERVICE_NAME") 
+        
+        if render_external_url:
+            KEEP_ALIVE_URL = render_external_url
+            print(f"🌐 URL keep-alive configurada automáticamente: {KEEP_ALIVE_URL}")
+        elif app_name:
+            KEEP_ALIVE_URL = f"https://{app_name}.onrender.com"
+            print(f"🌐 URL keep-alive generada desde nombre del servicio: {KEEP_ALIVE_URL}")
+        else:
+            print("⚠️ IMPORTANTE: No se pudo configurar la URL automáticamente.")
+            print("⚠️ Configura la variable RENDER_EXTERNAL_URL en Render o actualiza KEEP_ALIVE_URL manualmente")
+            return  # Salir si no se puede configurar la URL
+    
+    consecutive_failures = 0
+    print(f"🔄 Keep-alive iniciado. URL objetivo: {KEEP_ALIVE_URL}")
+    
+    while True:
+        try:
+            time.sleep(KEEP_ALIVE_INTERVAL)
+            
+            # Hacer ping al endpoint de salud
+            response = requests.get(f"{KEEP_ALIVE_URL}/health", timeout=30)
+            
+            if response.status_code == 200:
+                print(f"✅ Keep-alive exitoso: {datetime.now().strftime('%H:%M:%S')}")
+                consecutive_failures = 0
+            else:
+                consecutive_failures += 1
+                print(f"⚠️ Keep-alive falló (código {response.status_code}). Fallos consecutivos: {consecutive_failures}")
+                
+        except requests.RequestException as e:
+            consecutive_failures += 1
+            print(f"❗ Error en keep-alive: {str(e)[:100]}... Fallos consecutivos: {consecutive_failures}")
+            
+        except Exception as e:
+            print(f"❗ Error crítico en keep-alive: {e}")
+            time.sleep(60)  # Esperar más tiempo en caso de error crítico
+            
+        # Si hay muchos fallos, esperar más tiempo antes del siguiente intento
+        if consecutive_failures >= 5:  # Reducido de 3 a 5 para ser menos agresivo
+            print("⚠️ Múltiples fallos de keep-alive. Esperando 3 minutos adicionales.")
+            time.sleep(180)  # 3 minutos adicionales (reducido de 5)
+            consecutive_failures = 0  # Resetear contador después de la pausa
+
 
 # --- FUNCIONES PARA PRESENTACIÓN MEJORADA (SIN FORMATO TARJETA) ---
 def format_note(note, index=None):
@@ -683,56 +739,100 @@ def process_search_date(message):
 def setup_web_server():
     """Configura un servidor web simple para mantener el servicio activo en Render"""
     try:
-        import flask
+        from flask import Flask, jsonify
         import threading
         
-        app = flask.Flask(__name__)
+        app = Flask(__name__)
         
         @app.route('/')
         def index():
-            return "¡Rich AI está activo! Bot de Telegram funcionando correctamente."
+            stats = {
+                "status": "activo",
+                "usuarios": len(user_names),
+                "notas_totales": sum(len(notes) for notes in user_notes.values()),
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "version": "Rich AI v1.0"
+            }
+            return f"""
+            ¡Rich AI está activo! 🚀<br>
+            Status: {stats['status']}<br>
+            Usuarios: {stats['usuarios']}<br>
+            Notas: {stats['notas_totales']}<br>
+            Última actualización: {stats['timestamp']}
+            """
         
         @app.route('/health')
         def health():
-            return "OK", 200
+            return jsonify({
+                "status": "OK", 
+                "timestamp": datetime.now().isoformat(),
+                "service": "Rich AI Bot"
+            }), 200
         
-        port = int(os.environ.get("PORT", 8080))
+        @app.route('/ping')
+        def ping():
+            return jsonify({"response": "pong", "timestamp": datetime.now().isoformat()}), 200
+        
+        # Configuración de puerto más robusta
+        port = int(os.environ.get("PORT", 10000))  # Render usa 10000 por defecto
         
         def run_server():
-            app.run(host="0.0.0.0", port=port)
+            # Configuración de producción para Render
+            app.run(
+                host="0.0.0.0", 
+                port=port, 
+                debug=False, 
+                use_reloader=False,
+                threaded=True  # Importante para manejar múltiples requests
+            )
         
         # Iniciar el servidor web en un hilo separado
         server_thread = threading.Thread(target=run_server, daemon=True)
         server_thread.start()
-        print(f"🌐 Servidor web iniciado en el puerto {port}")
-    except ImportError:
-        print("⚠️ Flask no está instalado. El servidor web no se iniciará.")
-        print("⚠️ Para desplegar en Render, instala Flask con: pip install flask")
-
+        print(f"🌐 Servidor web iniciado en 0.0.0.0:{port}")
+        
+        # Esperar un momento para que el servidor se inicie
+        time.sleep(2)
+        return True
+        
+    except ImportError as e:
+        print(f"⚠️ Error de importación: {e}")
+        print("⚠️ Para desplegar en Render, asegúrate de tener Flask en requirements.txt")
+        return False
+    except Exception as e:
+        print(f"❌ Error al iniciar servidor web: {e}")
+        return False
 # --- INICIAR POLLING ---
+
+# Modificar la sección final del código:
 if __name__ == "__main__":
     print("🚀 Rich AI arrancando...")
-    # Cargar datos desde el respaldo al iniciar
-    load_dotenv()  # Asegurarse de cargar variables de entorno
+    load_dotenv()
     load_backup()
-
-    # Crear un respaldo inicial al arrancar
     save_backup()
 
-    # Iniciar servidor web para Render
-    setup_web_server()
-
+    # Iniciar servidor web para Render (SOLO UNA VEZ)
+    web_server_started = setup_web_server()
+    
     # Iniciar hilo para respaldos automáticos
     backup_thread = threading.Thread(target=backup_scheduler, daemon=True)
     backup_thread.start()
+    
+    # Iniciar hilo para keep-alive solo si el servidor web se inició correctamente
+    if web_server_started:
+        keep_alive_thread = threading.Thread(target=keep_alive_scheduler, daemon=True)
+        keep_alive_thread.start()
+        print("🔄 Sistema keep-alive iniciado")
+    else:
+        print("⚠️ Keep-alive no iniciado - servidor web no disponible")
 
     try:
         bot.infinity_polling()
     except KeyboardInterrupt:
         print("🛑 Apagado manual detectado. Guardando respaldo final...")
-        save_backup(True)  # Guardar respaldo final con rotación
+        save_backup(True)
         print("✅ Respaldo final completado. ¡Hasta pronto! 👋")
     except Exception as e:
         print(f"❌ Error crítico: {e}")
         print("⚠️ Intentando guardar respaldo de emergencia...")
-        save_backup(True)  # Respaldo de emergencia
+        save_backup(True)
