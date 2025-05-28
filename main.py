@@ -568,7 +568,10 @@ def callback_query(call):
         about_text = (
             "¡Hola! 👋 Somos el Equipo IODs (Index of Dreams), un grupo de personas con un sueño: crear herramientas que te hagan la vida más fácil. ✨\n\n"
             "Gracias por ser parte de la aventura Rich IA. ¡Tu confianza nos impulsa a seguir creando cosas increíbles para ti! 😊🙏\n\n"
-            "¡Conéctate con nosotros en nuestras redes! Nos encanta saber de ti:\n"
+            "¡Conéctate con nosotros en nuestras redes! Nos encanta saber de ti\n"
+            "¡Nuestra pagina web! 😉​🌐​\n"
+            "• 👀 Vistamos: https://sites.google.com/est.umss.edu/iods/inicio\n"
+            "¡Nuestras redes sociales! 🫂​📝​\n"
             "• 🐦 Tiktok: https://tiktok.com/@iods.index\n"
             "• 💻 Facebook: https://www.facebook.com/iods.index\n"
             "• 📸 Instagram: https://www.instagram.com/iods.index?igsh=aTZhOGR1eG1jZDh5\n\n"
