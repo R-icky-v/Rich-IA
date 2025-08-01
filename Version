@@ -10,7 +10,7 @@ import shutil
 import requests 
 
 load_dotenv()
-bot = telebot.TeleBot("8149029077:AAExO4Uv4RFbOuayc1plb6to--OsrV3xv9E")
+bot = telebot.TeleBot("8149029077:AAExO4Uv4RFbOuayc1plb6to--OsrV3xv9Ehhm")
 # Sistema Keep-Alive para Render
 KEEP_ALIVE_INTERVAL = 600  # 10 minutos (más seguro que 13)
 KEEP_ALIVE_URL = None  # Se configurará automáticamente
